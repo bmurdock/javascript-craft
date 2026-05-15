@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   LinkedList – ultra-robust, fully-iterable, sentinel-based singly list
+   LinkedList – compact, iterable, sentinel-based singly list
    © 2025 Brian Murdock – MIT-licensed
    ---------------------------------------------------------------------------
    Highlights
@@ -9,9 +9,9 @@
    • Private fields (TC39 #) + JSDoc generics  → type-safe, encapsulated.
    • [Symbol.iterator], .map, .reduce, .at (±index), .reverse, .clear.
    • O(1)  concat(list)  (steals nodes from `list`, leaving it empty).
-   • Negative indices accepted everywhere, mirroring Array semantics.
+   • Negative indices for indexed operations; insertAt uses insertion semantics.
    • Length exposed as read-only getter `.length` (no method/property clash).
-   • Constant-time  first / last  access,  zero-allocation toArray().
+   • Constant-time first / last access; preallocated toArray().
    ------------------------------------------------------------------------- */
 
 /** @template T */
@@ -139,6 +139,8 @@ class LinkedList /** @implements {Iterable<T>} */ {
   concat(other) {
     if (!(other instanceof LinkedList))
       throw new TypeError("Argument must be LinkedList");
+    if (other === this)
+      throw new TypeError("Cannot concatenate list with itself");
     if (other.#size === 0) return this;
     this.#tail.next = other.#head.next;
     this.#tail = other.#tail;
@@ -162,14 +164,9 @@ class LinkedList /** @implements {Iterable<T>} */ {
     return { prev, curr };
   }
 
-  /** Node object at index or `undefined`. */
-  getNodeAt(index) {
-    return this.#seek(index)?.curr;
-  }
-
   /** Value at index (undefined if OOB). */
   get(index) {
-    return this.getNodeAt(index)?.value;
+    return this.#seek(index)?.curr.value;
   }
 
   /** Array-style `.at()` (negative accepted). */
@@ -250,28 +247,5 @@ class LinkedList /** @implements {Iterable<T>} */ {
     return new LinkedList(values);
   }
 }
-
-/* ------------------------------------------------------------------------- */
-/* ----------------------------- DEMO / TESTS ------------------------------ */
-/* ------------------------------------------------------------------------- */
-
-// fluent chain
-const list = LinkedList.of(10, 20).prepend(0).append(30);
-console.log(String(list)); // 0 -> 10 -> 20 -> 30 -> null
-
-// negative indexing & at()
-console.log(list.at(-1)); // 30
-console.log(list.at(-4)); // 0
-
-// insert, remove, reverse
-list.insertAt(15, 3).removeAt(-2).reverse();
-console.log([...list]); // [30, 20, 15, 10, 0]
-
-// O(1) concatenation
-const a = LinkedList.of("a", "b");
-const b = LinkedList.of("c", "d", "e");
-a.concat(b);
-console.log(a.toString()); // a -> b -> c -> d -> e -> null
-console.log(b.length, b.isEmpty()); // 0 true  (emptied donor)
 
 export { LinkedList };
