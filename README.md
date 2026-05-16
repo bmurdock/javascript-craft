@@ -32,6 +32,8 @@ Use it when you want a larger API surface:
 - O(1) single-value endpoint operations (`append`, `prepend`, `pop`, `shift`)
   and O(1) list-to-list `concat` where possible. Variadic `push` and
   `unshift` are O(k) for k inserted values.
+- List-to-list `concat` transfers node ownership, so it is rejected while
+  either list has an active transaction.
 - Indexed access traverses from the closer end:
   O(min(index, length - index)).
 - `immutable()` returns a snapshot, not a live view.

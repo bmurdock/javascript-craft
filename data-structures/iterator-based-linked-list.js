@@ -37,6 +37,7 @@ class Cursor {
     this._node = node;
     this._index = index;
     this._direction = 1;
+    this._terminal = false;
   }
 
   /** @param {number} dir */
@@ -46,6 +47,8 @@ class Cursor {
   }
 
   next() {
+    if (this._terminal) return this;
+
     if (!this._node) {
       this._node =
         this._direction === 1 ? this._list._head.next : this._list._tail.prev;
@@ -72,6 +75,7 @@ class Cursor {
   reset(toEnd = false) {
     this._node = toEnd ? this._list._tail.prev : this._list._head.next;
     this._index = toEnd ? this._list.length - 1 : 0;
+    this._terminal = false;
     return this;
   }
 
@@ -138,7 +142,9 @@ class UltimateLinkedList {
 
   cursorAt(index) {
     const { node, index: actualIndex } = this._nodeAt(index);
-    return new Cursor(this, node, actualIndex);
+    const cursor = new Cursor(this, node, actualIndex);
+    cursor._terminal = !node;
+    return cursor;
   }
 
   /** @param {Node<T>} prev @param {T} value */
@@ -426,11 +432,13 @@ class UltimateLinkedList {
     }
 
     if (other instanceof UltimateLinkedList) {
+      if (this._transaction?._active || other._transaction?._active) {
+        throw new TypeError("Cannot concatenate during an active transaction");
+      }
       if (other.isEmpty()) return this;
 
       const startIndex = this._size;
       const otherSize = other._size;
-      const otherValues = other.toArray();
       const otherFirst = other._head.next;
       const otherLast = other._tail.prev;
       const thisLast = this._tail.prev;
@@ -447,9 +455,8 @@ class UltimateLinkedList {
       other._size = 0;
       other._changed();
 
-      otherValues.forEach((value, offset) =>
-        this._record({ type: "add", index: startIndex + offset, value })
-      );
+      this._record({ type: "concat", index: startIndex, size: otherSize });
+      other._record({ type: "clear", size: otherSize });
       return this;
     }
 
