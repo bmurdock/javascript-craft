@@ -6,7 +6,7 @@
    ==========
    • Sentinel head → no branch-heavy “if (!head) …” paths.
    • Tail pointer → O(1) append/concatenate.
-   • Private fields (TC39 #) + JSDoc generics  → type-safe, encapsulated.
+   • Private fields (TC39 #) + JSDoc generics → encapsulated, type-annotated state.
    • [Symbol.iterator], .map, .reduce, .at (±index), .reverse, .clear.
    • O(1)  concat(list)  (steals nodes from `list`, leaving it empty).
    • Negative indices for indexed operations; insertAt uses insertion semantics.
@@ -71,7 +71,7 @@ class LinkedList /** @implements {Iterable<T>} */ {
     return this;
   }
 
-  /** Insert at `index` (negatives allowed; same rules as `Array.prototype.at`). */
+  /** Insert at an integer index; negative indices use insertion-position semantics. */
   insertAt(value, index = this.#size) {
     if (!Number.isInteger(index))
       throw new RangeError("Expected an integer index");
@@ -85,7 +85,7 @@ class LinkedList /** @implements {Iterable<T>} */ {
     return this;
   }
 
-  /** Remove and return element at `index`; returns *undefined* if OOB. */
+  /** Remove at an integer index; returns *undefined* if invalid or OOB. */
   removeAt(index) {
     const nodePair = this.#seek(index);
     if (!nodePair) return undefined;
@@ -152,7 +152,7 @@ class LinkedList /** @implements {Iterable<T>} */ {
   }
 
   /* ——— QUERIES ——— */
-  /** Node (+prev) lookup helper — returns `null` if index OOB. */
+  /** Node (+prev) lookup helper — returns `null` if index is invalid or OOB. */
   #seek(index) {
     if (!Number.isInteger(index)) return null;
     if (index < 0) index = this.#size + index; // negative support
@@ -167,12 +167,12 @@ class LinkedList /** @implements {Iterable<T>} */ {
     return { prev, curr };
   }
 
-  /** Value at index (undefined if OOB). */
+  /** Value at an integer index (`undefined` if invalid or OOB). */
   get(index) {
     return this.#seek(index)?.curr.value;
   }
 
-  /** Array-style `.at()` (negative accepted). */
+  /** Integer-index lookup with negative-index support. */
   at(index) {
     return this.get(index);
   }
@@ -203,7 +203,7 @@ class LinkedList /** @implements {Iterable<T>} */ {
     return out;
   }
 
-  /** Reduce over elements (mirrors Array.reduce). */
+  /** Reduce with Array-like accumulator semantics; callback receives acc, value, and index. */
   reduce(fn, init) {
     let acc,
       i = 0,

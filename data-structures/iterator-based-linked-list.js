@@ -6,8 +6,9 @@
  * This implementation favors honest linked-list behavior over inflated claims:
  * - Doubly linked with head/tail sentinels for simple boundary handling.
  * - O(1) single-value endpoint operations and list-to-list concat by splicing.
- * - Indexed access traverses from the closer end: O(min(index, length - index)).
- * - Array-like helpers for common operations, plus cursors and observations.
+ * - Integer-indexed access traverses from the closer end.
+ * - Array-like helpers for common operations, plus fail-fast cursors and observations.
+ * - Node-transferring concat and split operations reject active transactions.
  * - Transactions snapshot values and can roll back in O(n).
  * - immutable() returns a snapshot, not a live view.
  * ----------------------------------------------------------------------------- */
@@ -16,7 +17,7 @@
 class Node {
   /** @param {T} [value] */
   constructor(value) {
-    /** @type {T} */
+    /** @type {T|undefined} */
     this.value = value;
     /** @type {Node<T>|null} */
     this.next = null;
@@ -25,7 +26,11 @@ class Node {
   }
 }
 
-/** @template T */
+/**
+ * Fail-fast cursor over an UltimateLinkedList. Call reset() to rebind after a
+ * structural list change.
+ * @template T
+ */
 class Cursor {
   /**
    * @param {UltimateLinkedList<T>} list
@@ -157,7 +162,10 @@ class UltimateLinkedList {
     return cursor;
   }
 
-  /** @param {Node<T>} prev @param {T} value */
+  /**
+   * @param {Node<T>} prev
+   * @param {T} value
+   */
   _insertAfter(prev, value) {
     const node = new Node(value);
     const next = prev.next;
@@ -249,7 +257,10 @@ class UltimateLinkedList {
     return node ? node.value : undefined;
   }
 
-  /** @param {number} index @param {T} value */
+  /**
+   * @param {number} index
+   * @param {T} value
+   */
   set(index, value) {
     const normalizedIndex = this._normalizeIndex(index);
     const { node } = this._nodeAt(index);
@@ -568,6 +579,13 @@ class UltimateLinkedList {
     return result;
   }
 
+  /**
+   * Relink nodes from an integer index into a new tail list.
+   * @param {number} index
+   * @returns {UltimateLinkedList<T>}
+   * @throws {RangeError} If the index is non-integer or out of bounds.
+   * @throws {TypeError} If the source list has an active transaction.
+   */
   splitAt(index) {
     if (!Number.isInteger(index)) {
       throw new RangeError("Expected an integer index");
@@ -719,6 +737,14 @@ class UltimateLinkedList {
     return new UltimateLinkedList();
   }
 
+  /**
+   * Build a half-open range from finite numbers.
+   * @param {number} start
+   * @param {number} end
+   * @param {number} [step=1]
+   * @returns {UltimateLinkedList<number>}
+   * @throws {RangeError} If inputs are non-finite or the step cannot advance.
+   */
   static range(start, end, step = 1) {
     if (![start, end, step].every(Number.isFinite)) {
       throw new RangeError("Range requires finite numbers");
