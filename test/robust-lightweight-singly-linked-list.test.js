@@ -52,6 +52,22 @@ test("supports positive and negative indexed access and removal", async () => {
   assert.deepEqual(list.toArray(), ["a", "b", "d"]);
 });
 
+test("non-integer indices cannot mutate list state", async () => {
+  const {
+    module: { LinkedList },
+  } = await importQuietly();
+
+  for (const index of [Number.NaN, 1.5]) {
+    const list = LinkedList.of("a", "b", "c");
+
+    assert.equal(list.get(index), undefined);
+    assert.equal(list.removeAt(index), undefined);
+    assert.throws(() => list.insertAt("changed", index), /integer index/);
+    assert.equal(list.length, 3);
+    assert.deepEqual(list.toArray(), ["a", "b", "c"]);
+  }
+});
+
 test("uses insertion-specific negative index semantics", async () => {
   const {
     module: { LinkedList },

@@ -63,6 +63,24 @@ test("indexed access matches an Array after mixed insertions, removals, and reve
   }
 });
 
+test("non-integer indices cannot mutate or corrupt list state", async () => {
+  const {
+    module: { UltimateLinkedList },
+  } = await importQuietly();
+
+  for (const index of [Number.NaN, 1.5]) {
+    const list = UltimateLinkedList.of("a", "b", "c");
+
+    assert.equal(list.get(index), undefined);
+    assert.equal(list.set(index, "changed"), false);
+    assert.equal(list.removeAt(index), undefined);
+    assert.throws(() => list.insertAt("changed", index), /integer index/);
+    assert.throws(() => list.splitAt(index), /integer index/);
+    assert.equal(list.length, 3);
+    assert.deepEqual(list.toArray(), ["a", "b", "c"]);
+  }
+});
+
 test("self-concat is rejected without data loss", async () => {
   const {
     module: { UltimateLinkedList },
@@ -165,6 +183,22 @@ test("list-to-list concat rejects active transactions without changing either li
   assert.deepEqual(secondDonor.toArray(), ["b", "c"]);
 });
 
+test("splitAt rejects active transactions without transferring nodes", async () => {
+  const {
+    module: { UltimateLinkedList },
+  } = await importQuietly();
+
+  const list = UltimateLinkedList.of("a", "b", "c");
+  const transaction = list.beginTransaction().begin();
+
+  assert.throws(() => list.splitAt(1), /Cannot split during an active transaction/);
+  assert.deepEqual(list.toArray(), ["a", "b", "c"]);
+  assert.equal(list.length, 3);
+
+  transaction.rollback();
+  assert.deepEqual(list.toArray(), ["a", "b", "c"]);
+});
+
 test("list-to-list concat splices without materializing donor values", async () => {
   const {
     module: { UltimateLinkedList },
@@ -232,6 +266,21 @@ test("cursors can reverse direction after reaching an endpoint", async () => {
   assert.equal(cursor.setDirection(1).next().value(), 3);
 });
 
+test("cursors fail fast after structural list changes and can be reset", async () => {
+  const {
+    module: { UltimateLinkedList },
+  } = await importQuietly();
+
+  const list = UltimateLinkedList.of(1, 2, 3);
+  const cursor = list.cursor().next();
+  list.clear();
+
+  assert.throws(() => cursor.next(), /Concurrent modification during cursor traversal/);
+  cursor.reset();
+  assert.equal(cursor.valid(), false);
+  assert.equal(cursor.value(), undefined);
+});
+
 test("observable lists emit direct events and transactional commit or rollback events", async () => {
   const {
     module: { UltimateLinkedList },
@@ -272,6 +321,41 @@ test("observable lists emit direct events and transactional commit or rollback e
   assert.deepEqual(list.toArray(), [2, 3]);
 });
 
+test("listener removal during notification does not skip remaining listeners", async () => {
+  const {
+    module: { UltimateLinkedList },
+  } = await importQuietly();
+
+  const list = new UltimateLinkedList([], { observable: true });
+  const calls = [];
+  let unsubscribeFirst;
+  unsubscribeFirst = list.addChangeListener(() => {
+    calls.push("first");
+    unsubscribeFirst();
+  });
+  list.addChangeListener(() => calls.push("second"));
+
+  list.append(1);
+  list.append(2);
+
+  assert.deepEqual(calls, ["first", "second", "second"]);
+});
+
+test("non-observable transactions do not retain unused change events", async () => {
+  const {
+    module: { UltimateLinkedList },
+  } = await importQuietly();
+
+  const list = UltimateLinkedList.of(1);
+  const transaction = list.beginTransaction().begin();
+  list.push(2, 3);
+  list.removeAt(0);
+
+  assert.deepEqual(transaction.events, []);
+  transaction.rollback();
+  assert.deepEqual(list.toArray(), [1]);
+});
+
 test("keys, values, entries, and splitAt expose Array-like iteration helpers", async () => {
   const {
     module: { UltimateLinkedList },
@@ -288,4 +372,35 @@ test("keys, values, entries, and splitAt expose Array-like iteration helpers", a
   ]);
   assert.deepEqual(list.toArray(), ["a", "b"]);
   assert.deepEqual(tail.toArray(), ["c", "d"]);
+});
+
+test("slice coerces fractional and NaN bounds before node lookup", async () => {
+  const {
+    module: { UltimateLinkedList },
+  } = await importQuietly();
+
+  const list = UltimateLinkedList.of("a", "b", "c", "d");
+
+  assert.deepEqual(list.slice(1.8, 3.9).toArray(), ["b", "c"]);
+  assert.deepEqual(list.slice(-2.8).toArray(), ["c", "d"]);
+  assert.deepEqual(list.slice(Number.NaN, 2.9).toArray(), ["a", "b"]);
+  assert.deepEqual(list.toArray(), ["a", "b", "c", "d"]);
+});
+
+test("range rejects inputs whose step cannot advance the current value", async () => {
+  const {
+    module: { UltimateLinkedList },
+  } = await importQuietly();
+
+  const start = 2 ** 53;
+
+  assert.equal(start + 1, start);
+  assert.throws(
+    () => UltimateLinkedList.range(start, start + 2, 1),
+    /Step does not advance range/
+  );
+  assert.throws(() => UltimateLinkedList.range(0, Number.POSITIVE_INFINITY), /finite numbers/);
+  assert.throws(() => UltimateLinkedList.range(0, 5, Number.NaN), /finite numbers/);
+  assert.deepEqual(UltimateLinkedList.range(1, 5, 2).toArray(), [1, 3]);
+  assert.deepEqual(UltimateLinkedList.range(5, 1, -2).toArray(), [5, 3]);
 });

@@ -38,6 +38,13 @@ class Cursor {
     this._index = index;
     this._direction = 1;
     this._terminal = false;
+    this._expectedModCount = list._modCount;
+  }
+
+  _assertUnmodified() {
+    if (this._expectedModCount !== this._list._modCount) {
+      throw new Error("Concurrent modification during cursor traversal");
+    }
   }
 
   /** @param {number} dir */
@@ -47,6 +54,7 @@ class Cursor {
   }
 
   next() {
+    this._assertUnmodified();
     if (this._terminal) return this;
 
     if (!this._node) {
@@ -65,6 +73,7 @@ class Cursor {
   }
 
   valid() {
+    this._assertUnmodified();
     return (
       this._node !== null &&
       this._node !== this._list._head &&
@@ -73,6 +82,7 @@ class Cursor {
   }
 
   reset(toEnd = false) {
+    this._expectedModCount = this._list._modCount;
     this._node = toEnd ? this._list._tail.prev : this._list._head.next;
     this._index = toEnd ? this._list.length - 1 : 0;
     this._terminal = false;
@@ -182,17 +192,19 @@ class UltimateLinkedList {
 
   /** @param {Object} event */
   _record(event) {
+    if (!this._observable) return;
+
     if (this._transaction?._active) {
       this._transaction.events.push(event);
       return;
     }
 
-    if (this._observable) this._notify(event);
+    this._notify(event);
   }
 
   /** @param {Object} event */
   _notify(event) {
-    for (const listener of this._listeners) {
+    for (const listener of [...this._listeners]) {
       try {
         listener(event);
       } catch (error) {
@@ -211,6 +223,7 @@ class UltimateLinkedList {
 
   /** @param {number} index */
   _normalizeIndex(index) {
+    if (!Number.isInteger(index)) return -1;
     return index < 0 ? this._size + index : index;
   }
 
@@ -244,7 +257,9 @@ class UltimateLinkedList {
 
     const oldValue = node.value;
     node.value = value;
-    this._record({ type: "update", index: normalizedIndex, oldValue, newValue: value });
+    if (this._observable) {
+      this._record({ type: "update", index: normalizedIndex, oldValue, newValue: value });
+    }
     return true;
   }
 
@@ -256,14 +271,14 @@ class UltimateLinkedList {
     const index = this._size;
     this._changed();
     this._insertBeforeTail(value);
-    this._record({ type: "add", index, value });
+    if (this._observable) this._record({ type: "add", index, value });
     return this;
   }
 
   prepend(value) {
     this._changed();
     this._insertAfter(this._head, value);
-    this._record({ type: "add", index: 0, value });
+    if (this._observable) this._record({ type: "add", index: 0, value });
     return this;
   }
 
@@ -274,7 +289,8 @@ class UltimateLinkedList {
     let index = this._size;
     for (const value of values) {
       this._insertBeforeTail(value);
-      this._record({ type: "add", index: index++, value });
+      if (this._observable) this._record({ type: "add", index, value });
+      index++;
     }
     return this._size;
   }
@@ -285,7 +301,7 @@ class UltimateLinkedList {
     const index = this._size - 1;
     this._changed();
     const value = this._unlink(this._tail.prev);
-    this._record({ type: "remove", index, value });
+    if (this._observable) this._record({ type: "remove", index, value });
     return value;
   }
 
@@ -294,7 +310,7 @@ class UltimateLinkedList {
 
     this._changed();
     const value = this._unlink(this._head.next);
-    this._record({ type: "remove", index: 0, value });
+    if (this._observable) this._record({ type: "remove", index: 0, value });
     return value;
   }
 
@@ -305,11 +321,16 @@ class UltimateLinkedList {
     for (let i = values.length - 1; i >= 0; i--) {
       this._insertAfter(this._head, values[i]);
     }
-    values.forEach((value, index) => this._record({ type: "add", index, value }));
+    if (this._observable) {
+      values.forEach((value, index) => this._record({ type: "add", index, value }));
+    }
     return this._size;
   }
 
   insertAt(value, index = this._size) {
+    if (!Number.isInteger(index)) {
+      throw new RangeError("Expected an integer index");
+    }
     if (index < 0) index = this._size + index + 1;
     if (index < 0 || index > this._size) {
       throw new RangeError(`Index ${index} out of bounds`);
@@ -322,7 +343,7 @@ class UltimateLinkedList {
       const prev = index === 0 ? this._head : this._nodeAt(index - 1).node;
       this._insertAfter(prev, value);
     }
-    this._record({ type: "add", index, value });
+    if (this._observable) this._record({ type: "add", index, value });
     return this;
   }
 
@@ -333,7 +354,9 @@ class UltimateLinkedList {
 
     this._changed();
     const value = this._unlink(node);
-    this._record({ type: "remove", index: normalizedIndex, value });
+    if (this._observable) {
+      this._record({ type: "remove", index: normalizedIndex, value });
+    }
     return value;
   }
 
@@ -345,7 +368,7 @@ class UltimateLinkedList {
       if (comparator(node.value, value)) {
         this._changed();
         const removed = this._unlink(node);
-        this._record({ type: "remove", index, value: removed });
+        if (this._observable) this._record({ type: "remove", index, value: removed });
         return removed;
       }
       node = node.next;
@@ -389,7 +412,7 @@ class UltimateLinkedList {
     this._head.next = this._tail;
     this._tail.prev = this._head;
     this._size = 0;
-    this._record({ type: "clear", size });
+    if (this._observable) this._record({ type: "clear", size });
     return this;
   }
 
@@ -408,7 +431,7 @@ class UltimateLinkedList {
     const oldHead = this._head;
     this._head = this._tail;
     this._tail = oldHead;
-    this._record({ type: "reverse" });
+    if (this._observable) this._record({ type: "reverse" });
     return this;
   }
 
@@ -422,7 +445,7 @@ class UltimateLinkedList {
     const values = this.toArray();
     values.sort(compareFn);
     this._resetFrom(values);
-    this._record({ type: "sort" });
+    if (this._observable) this._record({ type: "sort" });
     return this;
   }
 
@@ -455,8 +478,10 @@ class UltimateLinkedList {
       other._size = 0;
       other._changed();
 
-      this._record({ type: "concat", index: startIndex, size: otherSize });
-      other._record({ type: "clear", size: otherSize });
+      if (this._observable) {
+        this._record({ type: "concat", index: startIndex, size: otherSize });
+      }
+      if (other._observable) other._record({ type: "clear", size: otherSize });
       return this;
     }
 
@@ -525,6 +550,8 @@ class UltimateLinkedList {
   }
 
   slice(start = 0, end = this._size) {
+    start = Math.trunc(start) || 0;
+    end = Math.trunc(end) || 0;
     if (start < 0) start = this._size + start;
     if (end < 0) end = this._size + end;
     start = Math.max(0, start);
@@ -542,9 +569,15 @@ class UltimateLinkedList {
   }
 
   splitAt(index) {
+    if (!Number.isInteger(index)) {
+      throw new RangeError("Expected an integer index");
+    }
     if (index < 0) index = this._size + index;
     if (index < 0 || index > this._size) {
       throw new RangeError(`Index ${index} out of bounds`);
+    }
+    if (this._transaction?._active) {
+      throw new TypeError("Cannot split during an active transaction");
     }
 
     const tailList = new UltimateLinkedList(undefined, {
@@ -575,7 +608,7 @@ class UltimateLinkedList {
 
     this._size = index;
     tailList._size = tailSize;
-    this._record({ type: "split", index, size: tailSize });
+    if (this._observable) this._record({ type: "split", index, size: tailSize });
     return tailList;
   }
 
@@ -687,13 +720,21 @@ class UltimateLinkedList {
   }
 
   static range(start, end, step = 1) {
+    if (![start, end, step].every(Number.isFinite)) {
+      throw new RangeError("Range requires finite numbers");
+    }
     if (step === 0) throw new RangeError("Step cannot be zero");
 
     const list = new UltimateLinkedList();
     if ((step > 0 && start >= end) || (step < 0 && start <= end)) return list;
 
-    for (let value = start; step > 0 ? value < end : value > end; value += step) {
+    for (let value = start; step > 0 ? value < end : value > end; ) {
       list.append(value);
+      const nextValue = value + step;
+      if (nextValue === value) {
+        throw new RangeError("Step does not advance range");
+      }
+      value = nextValue;
     }
     return list;
   }

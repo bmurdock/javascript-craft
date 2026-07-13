@@ -73,6 +73,8 @@ class LinkedList /** @implements {Iterable<T>} */ {
 
   /** Insert at `index` (negatives allowed; same rules as `Array.prototype.at`). */
   insertAt(value, index = this.#size) {
+    if (!Number.isInteger(index))
+      throw new RangeError("Expected an integer index");
     if (index < 0) index = this.#size + index + 1;
     if (index < 0 || index > this.#size)
       throw new RangeError("Index out of bounds");
@@ -152,6 +154,7 @@ class LinkedList /** @implements {Iterable<T>} */ {
   /* ——— QUERIES ——— */
   /** Node (+prev) lookup helper — returns `null` if index OOB. */
   #seek(index) {
+    if (!Number.isInteger(index)) return null;
     if (index < 0) index = this.#size + index; // negative support
     if (index < 0 || index >= this.#size) return null;
     let prev = this.#head,
